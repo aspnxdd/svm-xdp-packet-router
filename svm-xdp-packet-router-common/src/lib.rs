@@ -32,6 +32,7 @@ pub struct PacketLogEntry {
     pub src_port: u16,
     pub dst_port: u16,
     pub raw_len: u16,
+    pub queue_id: u32,
     pub slot: u64,
     pub proposer_index: u32,
     pub shred_index: u32,

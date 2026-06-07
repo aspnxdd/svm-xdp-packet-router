@@ -144,7 +144,7 @@ fn log_packet_entry(entry: &PacketLogEntry) {
     let raw_len = usize::from(entry.raw_len).min(entry.raw.len());
 
     info!(
-        "packet action={} cpu={} src={}:{} dst_port={} len={} raw_len={} slot={} proposer_index={} shred_index={} witness_len={} commitment={} proposer_sig={} raw={}",
+        "packet action={} cpu={} src={}:{} dst_port={} len={} raw_len={} queue_id={} slot={} proposer_index={} shred_index={} witness_len={} commitment={} proposer_sig={} raw={}",
         action_name(entry.action),
         entry.cpu,
         src_ip,
@@ -152,6 +152,7 @@ fn log_packet_entry(entry: &PacketLogEntry) {
         entry.dst_port,
         entry.packet_len,
         entry.raw_len,
+        entry.queue_id,
         entry.slot,
         entry.proposer_index,
         entry.shred_index,

@@ -49,6 +49,7 @@ impl UdpHdr {
 }
 
 const SHRED_PORT: u16 = 8001u16.to_be();
+const XSK_MAX_QUEUES: u32 = 64;
 
 #[map]
 static SOURCE_ROUTING_TABLE: HashMap<u32, SourceRoute> = HashMap::with_max_entries(1024, 0);
@@ -136,6 +137,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
                 0,
                 0,
                 0,
+                0,
                 [0; 32],
                 [0; 64],
             );
@@ -154,7 +156,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
         unsafe { (*route).packet_count += 1 };
         unsafe { (*route).queue_id }
     } else {
-        0u32
+        proposer_index % XSK_MAX_QUEUES
     };
 
     match XSK_MAP.redirect(queue_id, 0) {
@@ -165,6 +167,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
                 src_ip,
                 u16::from_be(src_port),
                 u16::from_be(dst_port),
+                queue_id,
                 slot,
                 proposer_index,
                 shred_index,
@@ -181,6 +184,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
                 src_ip,
                 u16::from_be(src_port),
                 u16::from_be(dst_port),
+                queue_id,
                 slot,
                 proposer_index,
                 shred_index,
@@ -200,6 +204,7 @@ fn log_packet(
     src_ip: u32,
     src_port: u16,
     dst_port: u16,
+    queue_id: u32,
     slot: u64,
     proposer_index: u32,
     shred_index: u32,
@@ -214,6 +219,7 @@ fn log_packet(
     entry.packet_len = (ctx.data_end() - ctx.data()) as u32;
     entry.src_port = src_port;
     entry.dst_port = dst_port;
+    entry.queue_id = queue_id;
     entry.slot = slot;
     entry.proposer_index = proposer_index;
     entry.shred_index = shred_index;

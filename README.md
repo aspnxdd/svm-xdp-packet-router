@@ -1,56 +1,75 @@
 # svm-xdp-packet-router
 
-## Prerequisites
+Rust + eBPF/XDP prototype for inspecting UDP packets sent to port `8001`.
 
-1. stable rust toolchains: `rustup toolchain install stable`
-1. nightly rust toolchains: `rustup toolchain install nightly --component rust-src`
-1. (if cross-compiling) rustup target: `rustup target add ${ARCH}-unknown-linux-musl`
-1. (if cross-compiling) LLVM: (e.g.) `brew install llvm` (on macOS)
-1. bpf-linker: `cargo install bpf-linker` (`--no-default-features` on macOS)
+The XDP program runs in the kernel, parses packet headers, logs pshred packet data through BPF maps, and drops malformed pshred packets.
 
-## Build & Run
+## What It Does
 
-Use `cargo build`, `cargo check`, etc. as normal. Run your program with:
+- Attaches an XDP program to `lo`.
+- Parses Ethernet, IPv4, UDP, and `PshredHeader`.
+- Ignores packets that are not UDP destination port `8001`.
+- Drops malformed or invalid pshred packets.
+- Logs packet metadata and the first 128 raw packet bytes through a BPF map.
+- Reads and prints a per-CPU drop counter from userspace.
 
-```shell
-cargo run --release
+## Project Layout
+
+| Path                            | Purpose                           |
+| ------------------------------- | --------------------------------- |
+| `svm-xdp-packet-router/`        | Userspace loader                  |
+| `svm-xdp-packet-router-ebpf/`   | XDP/eBPF program                  |
+| `svm-xdp-packet-router-common/` | Shared structs used by both sides |
+
+## Requirements
+
+- Linux.
+- Rust stable.
+- Rust nightly with `rust-src`.
+- `bpf-linker`.
+- Root or the required BPF/network capabilities.
+
+## Setup
+
+```bash
+rustup toolchain install stable
+rustup toolchain install nightly --component rust-src
+cargo install bpf-linker
 ```
 
-Cargo build scripts are used to automatically build the eBPF correctly and include it in the
-program.
+## Run
 
-## Cross-compiling on macOS
-
-Cross compilation should work on both Intel and Apple Silicon Macs.
-
-```shell
-cargo build --package svm-xdp-packet-router --release \
-  --target=${ARCH}-unknown-linux-musl \
-  --config=target.${ARCH}-unknown-linux-musl.linker=\"rust-lld\"
+```bash
+cargo run
 ```
-The cross-compiled program `target/${ARCH}-unknown-linux-musl/release/svm-xdp-packet-router` can be
-copied to a Linux server or VM and run there.
 
-## License
+The project currently runs through `sudo -E` from `.cargo/config.toml`.
 
-With the exception of eBPF code, svm-xdp-packet-router is distributed under the terms
-of either the [MIT license] or the [Apache License] (version 2.0), at your
-option.
+## Send A Test Packet
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
-be dual licensed as above, without any additional terms or conditions.
+This sends a valid padded `PshredHeader` payload to UDP port `8001`:
 
-### eBPF
+```bash
+./send_udp.sh 127.0.0.1 8001 "01 00 00 00 11 11 11 11"
+```
 
-All eBPF code is distributed under either the terms of the
-[GNU General Public License, Version 2] or the [MIT license], at your
-option.
+This sends malformed pshred data and should be logged as `DROP`:
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in this project by you, as defined in the GPL-2 license, shall be
-dual licensed as above, without any additional terms or conditions.
+```bash
+echo "hello" | nc -u -w1 127.0.0.1 8001
+```
 
-[Apache license]: LICENSE-APACHE
-[MIT license]: LICENSE-MIT
-[GNU General Public License, Version 2]: LICENSE-GPL2
+## Logs
+
+The userspace loader prints packet log events for UDP destination port `8001` only.
+
+Each packet log includes:
+
+- XDP action.
+- Source IP and UDP port.
+- Destination UDP port.
+- Parsed pshred fields.
+- Source ID.
+- First 128 raw packet bytes.
+
+It also prints `DROP_COUNTER` every 5 seconds.

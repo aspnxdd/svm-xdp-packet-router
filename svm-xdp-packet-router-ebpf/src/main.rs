@@ -64,7 +64,7 @@ static DROP_COUNTER: aya_ebpf::maps::PerCpuArray<u64> =
     aya_ebpf::maps::PerCpuArray::with_max_entries(1, 0);
 
 #[inline(always)]
-unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Option<*const T> {
+fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Option<*const T> {
     let start = ctx.data();
     let end = ctx.data_end();
     let len = mem::size_of::<T>();
@@ -86,7 +86,7 @@ pub fn svm_xdp_packet_router(ctx: XdpContext) -> u32 {
 
 #[inline(always)]
 fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
-    let eth = match unsafe { ptr_at::<EthHdr>(ctx, 0) } {
+    let eth = match { ptr_at::<EthHdr>(ctx, 0) } {
         Some(eth) => eth,
         None => return Err(()),
     };
@@ -96,7 +96,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
     }
 
     let ip_offset = EthHdr::LEN;
-    let ip = match unsafe { ptr_at::<Ipv4Hdr>(ctx, ip_offset) } {
+    let ip = match { ptr_at::<Ipv4Hdr>(ctx, ip_offset) } {
         Some(ip) => ip,
         None => return Err(()),
     };
@@ -109,7 +109,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
     let ihl = unsafe { ((*ip).version_ihl & 0x0F) as usize * 4 };
 
     let udp_offset = ip_offset + ihl;
-    let udp = match unsafe { ptr_at::<UdpHdr>(ctx, udp_offset) } {
+    let udp = match { ptr_at::<UdpHdr>(ctx, udp_offset) } {
         Some(udp) => udp,
         None => return Ok(xdp_action::XDP_PASS),
     };
@@ -122,7 +122,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
     }
 
     let pshred_offset = udp_offset + UdpHdr::LEN;
-    let pshred = match unsafe { ptr_at::<PshredHeader>(ctx, pshred_offset) } {
+    let pshred = match { ptr_at::<PshredHeader>(ctx, pshred_offset) } {
         Some(pshred) => pshred,
         None => {
             increment_drop_counter();

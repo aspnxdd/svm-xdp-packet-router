@@ -8,7 +8,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use core::{ffi::c_void, mem};
-use svm_xdp_packet_router_common::{PacketLogEntry, PshredHeader, SourceKey, SourceRoute};
+use svm_xdp_packet_router_common::{PacketLogEntry, Shred, SourceRoute};
 
 #[repr(C)]
 struct EthHdr {
@@ -51,7 +51,7 @@ impl UdpHdr {
 const SHRED_PORT: u16 = 8001u16.to_be();
 
 #[map]
-static SOURCE_ROUTING_TABLE: HashMap<SourceKey, SourceRoute> = HashMap::with_max_entries(1024, 0);
+static SOURCE_ROUTING_TABLE: HashMap<u32, SourceRoute> = HashMap::with_max_entries(1024, 0);
 
 #[map]
 static XSK_MAP: XskMap = XskMap::with_max_entries(64, 0);
@@ -122,7 +122,7 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
     }
 
     let pshred_offset = udp_offset + UdpHdr::LEN;
-    let pshred = match { ptr_at::<PshredHeader>(ctx, pshred_offset) } {
+    let pshred = match { ptr_at::<Shred>(ctx, pshred_offset) } {
         Some(pshred) => pshred,
         None => {
             increment_drop_counter();
@@ -136,41 +136,21 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
                 0,
                 0,
                 0,
-                0,
                 [0; 32],
+                [0; 64],
             );
             return Ok(xdp_action::XDP_DROP);
         }
     };
 
-    let version = unsafe { (*pshred).version };
-    let flags = unsafe { (*pshred).flags };
     let slot = u64::from_be(unsafe { (*pshred).slot });
+    let proposer_index = u32::from_be(unsafe { (*pshred).proposer_index });
     let shred_index = u32::from_be(unsafe { (*pshred).shred_index });
-    let shred_count = u32::from_be(unsafe { (*pshred).shred_count });
-    let source_id = unsafe { (*pshred).source_id };
+    let witness_len = unsafe { (*pshred).witness_len };
+    let commitment = unsafe { (*pshred).commitment };
+    let proposer_sig = unsafe { (*pshred).proposer_sig };
 
-    if version != PshredHeader::MAGIC_VERSION {
-        increment_drop_counter();
-        log_packet(
-            ctx,
-            xdp_action::XDP_DROP,
-            src_ip,
-            u16::from_be(src_port),
-            u16::from_be(dst_port),
-            version,
-            flags,
-            slot,
-            shred_index,
-            shred_count,
-            source_id,
-        );
-        return Ok(xdp_action::XDP_DROP);
-    }
-
-    let key = SourceKey { source_id };
-
-    let queue_id = if let Some(route) = SOURCE_ROUTING_TABLE.get_ptr_mut(&key) {
+    let queue_id = if let Some(route) = SOURCE_ROUTING_TABLE.get_ptr_mut(&proposer_index) {
         unsafe { (*route).packet_count += 1 };
         unsafe { (*route).queue_id }
     } else {
@@ -185,12 +165,12 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
                 src_ip,
                 u16::from_be(src_port),
                 u16::from_be(dst_port),
-                version,
-                flags,
                 slot,
+                proposer_index,
                 shred_index,
-                shred_count,
-                source_id,
+                witness_len,
+                commitment,
+                proposer_sig,
             );
             Ok(action)
         }
@@ -201,12 +181,12 @@ fn try_pshred_router(ctx: &XdpContext) -> Result<u32, ()> {
                 src_ip,
                 u16::from_be(src_port),
                 u16::from_be(dst_port),
-                version,
-                flags,
                 slot,
+                proposer_index,
                 shred_index,
-                shred_count,
-                source_id,
+                witness_len,
+                commitment,
+                proposer_sig,
             );
             Ok(xdp_action::XDP_PASS)
         }
@@ -220,12 +200,12 @@ fn log_packet(
     src_ip: u32,
     src_port: u16,
     dst_port: u16,
-    version: u8,
-    flags: u8,
     slot: u64,
+    proposer_index: u32,
     shred_index: u32,
-    shred_count: u32,
-    source_id: [u8; 32],
+    witness_len: u8,
+    commitment: [u8; 32],
+    proposer_sig: [u8; 64],
 ) {
     let mut entry: PacketLogEntry = unsafe { mem::zeroed() };
     entry.action = action;
@@ -234,12 +214,12 @@ fn log_packet(
     entry.packet_len = (ctx.data_end() - ctx.data()) as u32;
     entry.src_port = src_port;
     entry.dst_port = dst_port;
-    entry.version = version;
-    entry.flags = flags;
     entry.slot = slot;
+    entry.proposer_index = proposer_index;
     entry.shred_index = shred_index;
-    entry.shred_count = shred_count;
-    entry.source_id = source_id;
+    entry.witness_len = witness_len;
+    entry.commitment = commitment;
+    entry.proposer_sig = proposer_sig;
 
     let raw_len = copy_raw_packet(ctx, &mut entry.raw);
     entry.raw_len = raw_len as u16;

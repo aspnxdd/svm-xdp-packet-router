@@ -32,12 +32,12 @@ pub struct PacketLogEntry {
     pub src_port: u16,
     pub dst_port: u16,
     pub raw_len: u16,
-    pub version: u8,
-    pub flags: u8,
     pub slot: u64,
+    pub proposer_index: u32,
     pub shred_index: u32,
-    pub shred_count: u32,
-    pub source_id: [u8; 32],
+    pub witness_len: u8,
+    pub commitment: [u8; 32],
+    pub proposer_sig: [u8; 64],
     pub raw: [u8; Self::RAW_LEN],
 }
 

@@ -71,3 +71,34 @@ pub struct SourceRoute {
 unsafe impl aya::Pod for PacketLogEntry {}
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for SourceRoute {}
+
+/**
+ * +-----------------+------------------------------+
+| Field           | Size (bytes)                 |
++-----------------+------------------------------+
+| slot            | 8                            |
+| proposer_index  | 4                            | (source id?)
+| shred_index     | 4                            |
+| commitment      | 32                           |
+| shred_data      | SHRED_DATA_BYTES             |
+| witness_len     | 1                            |
+| witness         | 32 * witness_len             |
+| proposer_sig    | 64                           |
++-----------------+------------------------------+
+ */
+
+const SHRED_DATA_BYTES: usize = 1024;
+const MAX_WITNESS_LEN: usize = 8; // The expected witness length is ceil(log2(NUM_RELAYS)); NUM_RELAYS=200 (recommended)
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Shred {
+    pub slot: u64,
+    pub proposer_index: u32,
+    pub shred_index: u32,
+    pub commitment: [u8; 32],
+    pub shred_data: [u8; SHRED_DATA_BYTES],
+    pub witness_len: u8,
+    pub witness: [[u8; 32]; MAX_WITNESS_LEN],
+    pub proposer_sig: [u8; 64],
+}

@@ -47,20 +47,16 @@ The project currently runs through `sudo -E` from `.cargo/config.toml`.
 
 ## Send A Test Packet
 
-This sends a valid padded `PshredHeader` payload to UDP port `8001`:
+This sends malformed pshred data and should be logged as `DROP`:
 
 ```bash
 ./send_udp.sh 127.0.0.1 8001 "01 00 00 00 11 11 11 11"
 ```
 
-```bash
-printf '\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11\x11' | nc -u -w1 127.0.0.1 8001
-```
-
-This sends malformed pshred data and should be logged as `DROP`:
+This sends a valid padded `Shred` payload to UDP port `8001`:
 
 ```bash
-echo "hello" | nc -u -w1 127.0.0.1 8001
+./send_udp.sh 127.0.0.1 8001 "$(npx tsx scripts/src/send_random_shreds.ts)"
 ```
 
 ## Logs

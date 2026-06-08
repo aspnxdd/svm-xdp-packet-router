@@ -4,6 +4,9 @@ Rust + eBPF/XDP prototype for inspecting UDP packets sent to port `8001`.
 
 The XDP program runs in the kernel, parses packet headers, logs pshred packet data through BPF maps, and drops malformed pshred packets.
 
+<img width="1522" height="753" alt="image" src="https://github.com/user-attachments/assets/46eb2257-6619-4ea3-a20a-f60e6c1263a0" />
+
+
 ## What It Does
 
 - Attaches an XDP program to `lo`.

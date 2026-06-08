@@ -76,3 +76,10 @@ Each packet log includes:
 - First 128 raw packet bytes.
 
 It also prints `DROP_COUNTER` every 5 seconds.
+
+## Articles about EBPF/XDP:
+
+- https://konghq.com/blog/engineering/writing-an-ebpf-xdp-load-balancer-in-rust
+- https://www.kernel.org/doc/html/latest/networking/af_xdp.html
+- https://medium.com/@stevelatif/aya-rust-tutorial-part-5-using-maps-4d26c4a2fff8
+- https://docs.cilium.io/en/latest/reference-guides/bpf/architecture/

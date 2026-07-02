@@ -15,6 +15,7 @@ env_logger = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = [
+    "io-util",
     "macros",
     "rt",
     "rt-multi-thread",
@@ -22,7 +23,7 @@ tokio = { workspace = true, features = [
     "signal",
     "time",
 ] }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "error-context", "help", "usage"] }
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

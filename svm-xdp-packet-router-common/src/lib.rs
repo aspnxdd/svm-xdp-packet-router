@@ -26,6 +26,7 @@ impl PshredHeader {
 #[derive(Clone, Copy, Debug)]
 pub struct PacketLogEntry {
     pub action: u32,
+    pub drop_reason: u32,
     pub cpu: u32,
     pub src_ip: u32,
     pub packet_len: u32,
@@ -54,6 +55,14 @@ pub mod action {
     pub const REDIRECT: u32 = 4;
 }
 
+pub mod drop_reason {
+    pub const NONE: u32 = 0;
+    pub const MISSING_SHRED: u32 = 1;
+    pub const BAD_WITNESS_LEN: u32 = 2;
+    pub const BAD_SLOT: u32 = 3;
+    pub const COUNT: u32 = 4;
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SourceKey {
@@ -67,11 +76,23 @@ pub struct SourceRoute {
     pub packet_count: u64,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct IpStats {
+    pub packets: u64,
+    pub bytes: u64,
+    pub drops: u64,
+    pub redirects: u64,
+    pub last_seen_ns: u64,
+}
+
 // needed for userspace HashMap usage
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for PacketLogEntry {}
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for SourceRoute {}
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for IpStats {}
 
 /**
  * +-----------------+------------------------------+
@@ -89,7 +110,7 @@ unsafe impl aya::Pod for SourceRoute {}
  */
 
 const SHRED_DATA_BYTES: usize = 1024;
-const MAX_WITNESS_LEN: usize = 8; // The expected witness length is ceil(log2(NUM_RELAYS)); NUM_RELAYS=200 (recommended)
+pub const MAX_WITNESS_LEN: usize = 8; // The expected witness length is ceil(log2(NUM_RELAYS)); NUM_RELAYS=200 (recommended)
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -102,4 +123,8 @@ pub struct Shred {
     pub witness_len: u8,
     pub witness: [[u8; 32]; MAX_WITNESS_LEN],
     pub proposer_sig: [u8; 64],
+}
+
+impl Shred {
+    pub const MAX_WITNESS_LEN: u8 = crate::MAX_WITNESS_LEN as u8;
 }

@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use log::{info, warn};
 use std::{
     fmt::Write as _,
+    fs,
     mem::size_of,
     net::{Ipv4Addr, SocketAddr},
     time::Duration,
@@ -39,6 +40,18 @@ struct MetricsMaps {
     drop_reasons: PerCpuArray<MapData, u64>,
     ip_stats: AyaHashMap<MapData, u32, IpStats>,
 }
+
+struct ProcessStats {
+    resident_memory_bytes: u64,
+    virtual_memory_bytes: u64,
+    cpu_seconds_total: f64,
+    threads: u64,
+    open_fds: u64,
+}
+
+const IP_STATS_MAX_ENTRIES: u64 = 65_536;
+const DROP_COUNTER_MAX_ENTRIES: u64 = 1;
+const DROP_REASONS_MAX_ENTRIES: u64 = drop_reason::COUNT as u64;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -325,6 +338,7 @@ fn http_response(status: &str, content_type: &str, body: &str) -> String {
 }
 
 fn render_metrics(metrics: &MetricsMaps) -> anyhow::Result<String> {
+    let process_stats = read_process_stats()?;
     let drop_total = per_cpu_total(&metrics.drop_counter, 0)?;
     let mut packet_total = 0u64;
     let mut byte_total = 0u64;
@@ -340,6 +354,8 @@ fn render_metrics(metrics: &MetricsMaps) -> anyhow::Result<String> {
     }
 
     let mut out = String::new();
+    write_process_metrics(&mut out, &process_stats);
+
     write_metric_header(
         &mut out,
         "svm_xdp_packets_total",
@@ -447,7 +463,151 @@ fn render_metrics(metrics: &MetricsMaps) -> anyhow::Result<String> {
         );
     }
 
+    write_bpf_map_metrics(&mut out, ip_entries.len() as u64);
+
     Ok(out)
+}
+
+fn write_process_metrics(out: &mut String, stats: &ProcessStats) {
+    write_metric_header(
+        out,
+        "process_resident_memory_bytes",
+        "Resident memory size in bytes.",
+        "gauge",
+    );
+    let _ = writeln!(
+        out,
+        "process_resident_memory_bytes {}",
+        stats.resident_memory_bytes
+    );
+
+    write_metric_header(
+        out,
+        "process_virtual_memory_bytes",
+        "Virtual memory size in bytes.",
+        "gauge",
+    );
+    let _ = writeln!(
+        out,
+        "process_virtual_memory_bytes {}",
+        stats.virtual_memory_bytes
+    );
+
+    write_metric_header(
+        out,
+        "process_cpu_seconds_total",
+        "Total user and system CPU time spent by this process.",
+        "counter",
+    );
+    let _ = writeln!(
+        out,
+        "process_cpu_seconds_total {:.2}",
+        stats.cpu_seconds_total
+    );
+
+    write_metric_header(out, "process_threads", "Number of OS threads.", "gauge");
+    let _ = writeln!(out, "process_threads {}", stats.threads);
+
+    write_metric_header(
+        out,
+        "process_open_fds",
+        "Number of open file descriptors.",
+        "gauge",
+    );
+    let _ = writeln!(out, "process_open_fds {}", stats.open_fds);
+}
+
+fn write_bpf_map_metrics(out: &mut String, ip_stats_entries: u64) {
+    write_metric_header(
+        out,
+        "svm_xdp_bpf_map_entries",
+        "Current number of entries visible in selected BPF maps.",
+        "gauge",
+    );
+    let _ = writeln!(
+        out,
+        "svm_xdp_bpf_map_entries{{map=\"IP_STATS\"}} {ip_stats_entries}"
+    );
+    let _ = writeln!(
+        out,
+        "svm_xdp_bpf_map_entries{{map=\"DROP_COUNTER\"}} {DROP_COUNTER_MAX_ENTRIES}"
+    );
+    let _ = writeln!(
+        out,
+        "svm_xdp_bpf_map_entries{{map=\"DROP_REASONS\"}} {DROP_REASONS_MAX_ENTRIES}"
+    );
+
+    write_metric_header(
+        out,
+        "svm_xdp_bpf_map_max_entries",
+        "Configured maximum entries for selected BPF maps.",
+        "gauge",
+    );
+    let _ = writeln!(
+        out,
+        "svm_xdp_bpf_map_max_entries{{map=\"IP_STATS\"}} {IP_STATS_MAX_ENTRIES}"
+    );
+    let _ = writeln!(
+        out,
+        "svm_xdp_bpf_map_max_entries{{map=\"DROP_COUNTER\"}} {DROP_COUNTER_MAX_ENTRIES}"
+    );
+    let _ = writeln!(
+        out,
+        "svm_xdp_bpf_map_max_entries{{map=\"DROP_REASONS\"}} {DROP_REASONS_MAX_ENTRIES}"
+    );
+}
+
+fn read_process_stats() -> anyhow::Result<ProcessStats> {
+    let stat = fs::read_to_string("/proc/self/stat").context("failed to read /proc/self/stat")?;
+    let statm =
+        fs::read_to_string("/proc/self/statm").context("failed to read /proc/self/statm")?;
+
+    let close_paren = stat
+        .rfind(')')
+        .ok_or_else(|| anyhow::anyhow!("unexpected /proc/self/stat format"))?;
+    let fields: Vec<&str> = stat[close_paren + 2..].split_whitespace().collect();
+    if fields.len() <= 17 {
+        anyhow::bail!("unexpected /proc/self/stat field count");
+    }
+
+    let utime_ticks: u64 = fields[11].parse()?;
+    let stime_ticks: u64 = fields[12].parse()?;
+    let threads: u64 = fields[17].parse()?;
+
+    let statm_fields: Vec<&str> = statm.split_whitespace().collect();
+    if statm_fields.len() < 2 {
+        anyhow::bail!("unexpected /proc/self/statm field count");
+    }
+
+    let virtual_pages: u64 = statm_fields[0].parse()?;
+    let resident_pages: u64 = statm_fields[1].parse()?;
+    let page_size = page_size_bytes()?;
+    let ticks_per_second = clock_ticks_per_second()?;
+    let open_fds = fs::read_dir("/proc/self/fd")?.count() as u64;
+
+    Ok(ProcessStats {
+        resident_memory_bytes: resident_pages.saturating_mul(page_size),
+        virtual_memory_bytes: virtual_pages.saturating_mul(page_size),
+        cpu_seconds_total: (utime_ticks + stime_ticks) as f64 / ticks_per_second as f64,
+        threads,
+        open_fds,
+    })
+}
+
+fn page_size_bytes() -> anyhow::Result<u64> {
+    let value = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if value <= 0 {
+        anyhow::bail!("failed to read page size");
+    }
+    Ok(value as u64)
+}
+
+fn clock_ticks_per_second() -> anyhow::Result<u64> {
+    let value = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    if value <= 0 {
+        anyhow::bail!("failed to read clock ticks per second");
+    }
+    Ok(value as u64)
 }
 
 fn write_metric_header(out: &mut String, name: &str, help: &str, metric_type: &str) {

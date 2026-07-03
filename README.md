@@ -134,6 +134,15 @@ The `metrics` command exposes Prometheus text format metrics:
 - `svm_xdp_per_ip_drops{ip="127.0.0.1"}`
 - `svm_xdp_per_ip_redirects{ip="127.0.0.1"}`
 - `svm_xdp_per_ip_last_seen_ns{ip="127.0.0.1"}`
+- `process_resident_memory_bytes`
+- `process_virtual_memory_bytes`
+- `process_cpu_seconds_total`
+- `process_threads`
+- `process_open_fds`
+- `svm_xdp_bpf_map_entries{map="IP_STATS"}`
+- `svm_xdp_bpf_map_max_entries{map="IP_STATS"}`
+
+The process metrics are Linux `/proc/self` gauges/counters. The BPF map metrics show kernel-side map usage separately, because XDP map memory is not part of the Rust process heap.
 
 ## Articles about EBPF/XDP:
 

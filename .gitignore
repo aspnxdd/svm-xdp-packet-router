@@ -9,3 +9,6 @@ target/
 **/*.rs.bk
 scripts/node_modules
 scripts/dist
+.atl/
+presentation/**/*.md
+presentation/**/*.pptx
